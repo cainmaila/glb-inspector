@@ -9,6 +9,9 @@ import { CreateBox } from '@babylonjs/core/Meshes/Builders/boxBuilder';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector';
+import { DirectionalLight } from '@babylonjs/core/Lights/directionalLight';
+import { HDRCubeTexture } from '@babylonjs/core/Materials/Textures/hdrCubeTexture';
+import { ImageProcessingConfiguration } from '@babylonjs/core/Materials/imageProcessingConfiguration';
 import { PointerEventTypes } from '@babylonjs/core/Events/pointerEvents';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import type { Node } from '@babylonjs/core/node';
@@ -20,6 +23,7 @@ import { GLTF2Export } from '@babylonjs/serializers/glTF/2.0';
 
 SceneLoader.ShowLoadingScreen = false; // own progress overlay below
 
+const untoned = new ImageProcessingConfiguration(); // helper overlays skip the scene's tone mapping
 const fmt = (n: number) => n.toLocaleString();
 const v3 = (v: { x: number; y: number; z: number }) => `${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)}`;
 const meshesOf = (n: Node) => [...(n instanceof AbstractMesh ? [n] : []), ...n.getChildMeshes()];
@@ -100,6 +104,7 @@ export default function App() {
       ghost = new StandardMaterial('__ghost', scene);
       ghost.alpha = 0.08;
       ghost.disableDepthWrite = true;
+      ghost.imageProcessingConfiguration = untoned;
     }
     for (const m of scene.meshes) {
       if (m === selBox) continue;
@@ -151,6 +156,7 @@ export default function App() {
     mat.wireframe = true;
     mat.disableLighting = true;
     mat.emissiveColor = Color3.Yellow();
+    mat.imageProcessingConfiguration = untoned;
     selBox.material = mat;
     selBox.isPickable = false;
     selBox.renderingGroupId = 1;
@@ -175,17 +181,28 @@ export default function App() {
     try {
       await AppendSceneAsync(src, s, {
         pluginExtension: '.glb',
-        onProgress: (e) => e.lengthComputable && setProgress(e.loaded / e.total),
+        onProgress: (e) => s === scene && e.lengthComputable && setProgress(e.loaded / e.total),
       });
     } catch (e) {
+      if (s !== scene) return;
       setError(String(e));
       setProgress(null);
       return;
     }
+    if (s !== scene) return; // a newer load replaced (and disposed) this scene
     const r = s.rootNodes.slice();
     s.createDefaultCamera(true, true, true);
-    s.createDefaultLight(true);
+    for (const l of s.lights.slice()) l.dispose(); // model lights (KHR_lights_punctual) vary wildly; use one consistent rig
     const cam = s.activeCamera as ArcRotateCamera;
+    // IBL gives PBR its ambient + reflections (metals are black without it)
+    s.environmentTexture = new HDRCubeTexture('german_town_street_1k.hdr', s, 256, false, true, false, true, null, () => s === scene && setError(t().hdrError));
+    // key light parented to the camera (from upper-left behind it) so the visible side always has form-revealing shading
+    const key = new DirectionalLight('__key', new Vector3(0.4, -0.6, 1), s); // camera-local: right, down, forward
+    key.parent = cam;
+    key.intensity = 1.5;
+    // PBR Neutral tone mapping keeps base colors close to authored values (what an inspector should show)
+    s.imageProcessingConfiguration.toneMappingEnabled = true;
+    s.imageProcessingConfiguration.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL;
     cam.wheelDeltaPercentage = 0.02;
     cam.minZ = 0.01;
     s.onPointerObservable.add((e) => {
@@ -205,7 +222,7 @@ export default function App() {
       meshes: meshes.length,
       vertices: meshes.reduce((a, m) => a + m.getTotalVertices(), 0),
       materials: scene?.materials.length ?? 0,
-      textures: scene?.textures.length ?? 0,
+      textures: scene?.textures.filter((x) => x !== scene!.environmentTexture).length ?? 0, // exclude viewer's IBL
     };
   });
 
