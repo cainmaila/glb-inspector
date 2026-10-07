@@ -11,11 +11,11 @@
   --color-base-200: oklch(16% 0.006 260);
   --color-base-300: oklch(25% 0.008 260);
   --color-base-content: oklch(93% 0.005 260);
-  --color-primary: oklch(89% 0.19 125);
+  --color-primary: #c6f24e; /* hex: also read by Babylon for the selection box */
   --color-primary-content: oklch(20% 0.04 125);
   --color-secondary: oklch(75% 0.02 260);
   --color-secondary-content: oklch(18% 0.006 260);
-  --color-accent: oklch(89% 0.19 125);
+  --color-accent: #c6f24e;
   --color-accent-content: oklch(20% 0.04 125);
   --color-neutral: oklch(26% 0.008 260);
   --color-neutral-content: oklch(90% 0.005 260);
@@ -23,7 +23,7 @@
   --color-info-content: oklch(18% 0.03 235);
   --color-success: oklch(80% 0.17 150);
   --color-success-content: oklch(18% 0.04 150);
-  --color-warning: oklch(89% 0.19 125);
+  --color-warning: #c6f24e;
   --color-warning-content: oklch(20% 0.04 125);
   --color-error: oklch(66% 0.2 22);
   --color-error-content: oklch(97% 0.01 22);

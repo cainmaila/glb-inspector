@@ -23,6 +23,7 @@ import { GLTF2Export } from '@babylonjs/serializers/glTF/2.0';
 
 SceneLoader.ShowLoadingScreen = false; // own progress overlay below
 
+const clear = new Color4(0, 0, 0, 0);
 const untoned = new ImageProcessingConfiguration(); // helper overlays skip the scene's tone mapping
 const fmt = (n: number) => n.toLocaleString();
 const v3 = (v: { x: number; y: number; z: number }) => `${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)}`;
@@ -47,7 +48,6 @@ const AXES = (
   { label, color, d, neg: false },
   { label, color, d: d.negate(), neg: true },
 ]);
-const ACCENT = '#c6f24e'; // matches theme --color-primary
 // 24px stroke icons (single path each)
 const ICON = {
   focus: 'M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3M9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0',
@@ -104,11 +104,19 @@ export default function App() {
   const [dragging, setDragging] = createSignal(false);
   const [copied, setCopied] = createSignal('');
 
-  const copy = (key: string, text: string) => {
-    navigator.clipboard.writeText(text);
+  let copyTimer = 0;
+  const copy = async (key: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text); // undefined / rejects outside secure contexts
+    } catch {
+      return;
+    }
+    clearTimeout(copyTimer);
     setCopied(key);
-    setTimeout(() => copied() === key && setCopied(''), 1400);
+    copyTimer = setTimeout(() => setCopied(''), 1400);
   };
+  let dragDepth = 0; // dragenter/leave fire per child element; count to know when the file really left
+  const isFile = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files');
 
   const toggle = (id: number) => {
     const s = new Set(expanded());
@@ -188,6 +196,7 @@ export default function App() {
 
   const select = (n: Node | null, focus: boolean) => {
     setSelected(n);
+    setCopied('');
     selBox?.dispose();
     selBox = undefined;
     if (!n || !scene) return;
@@ -203,7 +212,7 @@ export default function App() {
     const mat = new StandardMaterial('__selection', scene);
     mat.wireframe = true;
     mat.disableLighting = true;
-    mat.emissiveColor = Color3.FromHexString(ACCENT);
+    mat.emissiveColor = Color3.FromHexString(getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim());
     mat.imageProcessingConfiguration = untoned;
     selBox.material = mat;
     selBox.isPickable = false;
@@ -296,6 +305,9 @@ export default function App() {
     if (!n) return null;
     const ms = meshesOf(n);
     const bb = ms.length ? n.getHierarchyBoundingVectors(true) : null;
+    // world bounds back into glTF space (undo __root__ handedness flip), matching the axis colors and gltfWorld
+    const toGltf = Matrix.Invert((rootOf(n) as TransformNode).getWorldMatrix());
+    const size = bb && Vector3.TransformNormal(bb.max.subtract(bb.min), toGltf);
     const t = n instanceof TransformNode ? n : null;
     return {
       node: n,
@@ -310,16 +322,16 @@ export default function App() {
       position: t && v3(t.position),
       rotation: t && v3((t.rotationQuaternion?.toEulerAngles() ?? t.rotation).scale(180 / Math.PI)),
       scaling: t && v3(t.scaling),
-      size: bb && v3(bb.max.subtract(bb.min)),
-      center: bb && v3(bb.min.add(bb.max).scale(0.5)),
+      size: size && v3(new Vector3(Math.abs(size.x), Math.abs(size.y), Math.abs(size.z))),
+      center: bb && v3(Vector3.TransformCoordinates(bb.min.add(bb.max).scale(0.5), toGltf)),
       metadata: n.metadata && Object.keys(n.metadata).length ? JSON.stringify(n.metadata, null, 2) : '',
     };
   });
 
   onMount(() => {
     engine = new Engine(canvas, true);
-    engine.runRenderLoop(() => scene?.activeCamera && scene.render());
-    const ro = new ResizeObserver(() => engine.resize()); // window resize + panel collapse
+    engine.runRenderLoop(() => (scene?.activeCamera ? scene.render() : engine.clear(clear, true, true))); // clear: no stale frame while loading / after a failed load
+    const ro = new ResizeObserver(() => engine.resize()); // window resize (panels float over the canvas, so they never resize it)
     ro.observe(canvas);
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && isolated() && isolate(null);
     window.addEventListener('keydown', onKey);
@@ -333,12 +345,15 @@ export default function App() {
 
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
+    dragDepth = 0;
     setDragging(false);
     const f = e.dataTransfer?.files[0];
     if (f) load(f);
   };
   const onFile = (e: Event & { currentTarget: HTMLInputElement }) => e.currentTarget.files?.[0] && load(e.currentTarget.files[0]);
 
+  // hidden row actions take no clicks until the row is hovered (no accidental taps on touch screens)
+  const hiddenBtn = 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto focus-visible:opacity-100';
   const rowBtn = 'size-6 shrink-0 grid place-items-center rounded-md transition-colors';
   const Row = (p: { node: Node; depth: number; flat?: boolean }) => {
     const kids = () => p.node.getChildren();
@@ -352,7 +367,7 @@ export default function App() {
           class="group relative flex items-center gap-1.5 h-7 pr-2 mx-1.5 rounded-md cursor-pointer text-[13px] whitespace-nowrap bg-(--row) transition-colors"
           classList={{
             '[--row:var(--color-base-300)] text-base-content': sel(),
-            '[--row:var(--color-base-100)] hover:[--row:oklch(22.5%_0.007_260)] text-base-content/80': !sel(),
+            '[--row:var(--color-base-100)] hover:[--row:color-mix(in_oklch,var(--color-base-100),var(--color-base-300))] text-base-content/80': !sel(),
             'opacity-35': !enabled(),
           }}
           style={{
@@ -387,11 +402,11 @@ export default function App() {
           </Show>
           <span class="font-mono text-[10px] text-base-content/25 truncate">{p.node.getClassName()}</span>
           {/* overlays the row's right edge so hidden actions don't steal width from the name */}
-          <span class="absolute inset-y-0 right-0 flex items-center gap-0.5 pl-6 pr-1 rounded-r-md from-(--row) from-70% to-transparent pointer-events-none *:pointer-events-auto group-hover:bg-linear-to-l"
+          <span class="absolute inset-y-0 right-0 flex items-center gap-0.5 pl-6 pr-1 rounded-r-md from-(--row) from-70% to-transparent pointer-events-none group-hover:bg-linear-to-l"
             classList={{ 'bg-linear-to-l': isolated() === p.node || !enabled() }}
           >
             <button
-              class={`${rowBtn} text-base-content/50 hover:text-base-content hover:bg-base-content/10 opacity-0 group-hover:opacity-100 focus-visible:opacity-100`}
+              class={`${rowBtn} ${hiddenBtn} text-base-content/50 hover:text-base-content hover:bg-base-content/10`}
               title={t().focus}
               aria-label={t().focus}
               onClick={(e) => {
@@ -404,8 +419,8 @@ export default function App() {
             <button
               class={rowBtn}
               classList={{
-                'bg-primary text-primary-content': isolated() === p.node,
-                'text-base-content/50 hover:text-base-content hover:bg-base-content/10 opacity-0 group-hover:opacity-100 focus-visible:opacity-100': isolated() !== p.node,
+                'pointer-events-auto bg-primary text-primary-content': isolated() === p.node,
+                [`${hiddenBtn} text-base-content/50 hover:text-base-content hover:bg-base-content/10`]: isolated() !== p.node,
               }}
               title={t().isolateTip}
               aria-label={t().isolateTip}
@@ -422,8 +437,8 @@ export default function App() {
             <button
               class={`${rowBtn} hover:bg-base-content/10`}
               classList={{
-                'text-base-content/50 hover:text-base-content opacity-0 group-hover:opacity-100 focus-visible:opacity-100': enabled(),
-                'text-base-content': !enabled(),
+                [`${hiddenBtn} text-base-content/50 hover:text-base-content`]: enabled(),
+                'pointer-events-auto text-base-content': !enabled(),
               }}
               title={t().toggleVis}
               aria-label={t().toggleVis}
@@ -457,11 +472,9 @@ export default function App() {
       class="relative h-screen overflow-hidden"
       // x-offsets for anything that must sit beside the open panels
       style={{ '--l': leftOpen() ? '356px' : '8px', '--r': rightOpen() ? '336px' : '8px' }}
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={(e) => !e.relatedTarget && setDragging(false)}
+      onDragOver={(e) => e.preventDefault()}
+      onDragEnter={(e) => isFile(e) && dragDepth++ === 0 && setDragging(true)}
+      onDragLeave={(e) => isFile(e) && --dragDepth === 0 && setDragging(false)}
       onDrop={onDrop}
     >
       <aside class={`${panel} left-2 bottom-2 w-[340px]`} classList={{ '-translate-x-[calc(100%+1rem)] opacity-0': !leftOpen() }} inert={!leftOpen()}>
@@ -517,7 +530,7 @@ export default function App() {
         classList={{ 'after:ring-primary/60': dragging(), 'after:ring-transparent': !dragging() }}
       >
         <canvas ref={canvas} class="absolute inset-0 w-full h-full outline-none block" />
-        <Show when={!roots().length && progress() === null && !error()}>
+        <Show when={!roots().length && progress() === null}>
           <label class="rise absolute inset-0 grid place-items-center cursor-pointer">
             <div class="text-center space-y-5">
               <div
@@ -575,7 +588,7 @@ export default function App() {
         </Show>
         <Show when={roots().length}>
           <div class="absolute bottom-3 left-[calc(var(--l)+4px)] flex flex-wrap gap-1 max-w-[40%] pointer-events-none transition-[left] duration-400 ease-out-expo">
-            <For each={t().controls.split(/\s*[・·]\s*/)}>
+            <For each={t().controls}>
               {(c) => <span class="px-2 h-6 grid place-items-center rounded-md bg-base-100/75 backdrop-blur-md border border-base-content/6 text-[11px] text-base-content/55">{c}</span>}
             </For>
           </div>
