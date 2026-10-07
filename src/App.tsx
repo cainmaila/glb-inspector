@@ -219,9 +219,9 @@ export default function App() {
     s.imageProcessingConfiguration.toneMappingEnabled = true;
     s.imageProcessingConfiguration.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL;
     cam.wheelDeltaPercentage = 0.02;
-    cam.minZ = 0.01;
     cam.alpha = Math.PI / 2; // look from glTF +Z toward -Z, like three.js default view
     cam.onViewMatrixChangedObservable.add(() => {
+      cam.minZ = cam.radius * 0.01; // near plane tracks zoom: no z-fighting far out, no clipping up close
       const view = cam.getViewMatrix();
       const v = AXES.map((a) => {
         const { x, y, z } = Vector3.TransformNormal(a.d, view);
