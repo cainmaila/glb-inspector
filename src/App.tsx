@@ -219,7 +219,6 @@ export default function App() {
     s.imageProcessingConfiguration.toneMappingEnabled = true;
     s.imageProcessingConfiguration.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL;
     cam.wheelDeltaPercentage = 0.02;
-    cam.minZ = 0.01;
     cam.alpha = Math.PI / 2; // look from glTF +Z toward -Z, like three.js default view
     cam.onViewMatrixChangedObservable.add(() => {
       const view = cam.getViewMatrix();
