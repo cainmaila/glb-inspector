@@ -7,7 +7,7 @@ import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh';
 import type { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { CreateBox } from '@babylonjs/core/Meshes/Builders/boxBuilder';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
-import { Color3 } from '@babylonjs/core/Maths/math.color';
+import { Color3, Color4 } from '@babylonjs/core/Maths/math.color';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { DirectionalLight } from '@babylonjs/core/Lights/directionalLight';
 import { HDRCubeTexture } from '@babylonjs/core/Materials/Textures/hdrCubeTexture';
@@ -39,14 +39,40 @@ const gltfWorld = (n: TransformNode) =>
 // view gizmo axes in glTF space; __root__ flips handedness so glTF +X is Babylon -X
 const AXES = (
   [
-    ['X', '#e5484d', new Vector3(-1, 0, 0)],
-    ['Y', '#8cc63f', new Vector3(0, 1, 0)],
-    ['Z', '#3b82f6', new Vector3(0, 0, 1)],
+    ['X', '#ff5d64', new Vector3(-1, 0, 0)],
+    ['Y', '#5fd38d', new Vector3(0, 1, 0)],
+    ['Z', '#4d8dff', new Vector3(0, 0, 1)],
   ] as const
 ).flatMap(([label, color, d]) => [
   { label, color, d, neg: false },
   { label, color, d: d.negate(), neg: true },
 ]);
+const ACCENT = '#c6f24e'; // matches theme --color-primary
+// 24px stroke icons (single path each)
+const ICON = {
+  focus: 'M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3M9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0',
+  isolate: 'M3 12a9 9 0 1 0 18 0a9 9 0 1 0-18 0M9.5 12a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0',
+  eye: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0',
+  eyeOff: 'M3 3l18 18M10.6 5.1Q11.3 5 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3 3.9M6.6 6.6C3.7 8.5 2 12 2 12s3.5 7 10 7c1.9 0 3.6-.6 5-1.4M9.9 9.9a3 3 0 0 0 4.2 4.2',
+  chevron: 'm9 6 6 6-6 6',
+  search: 'M4 11a7 7 0 1 0 14 0a7 7 0 1 0-14 0M20 20l-3.5-3.5',
+  copy: 'M9 11a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2zM5 15a1 1 0 0 1-1-1V6a2 2 0 0 1 2-2h8a1 1 0 0 1 1 1',
+  matrix: 'M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM4 12h16M12 4v16',
+  download: 'M12 4v11m-5-5 5 5 5-5M5 20h14',
+  upload: 'M12 16V4m-5 5 5-5 5 5M5 20h14',
+  up: 'M14 9 9 4 4 9M20 20h-7a4 4 0 0 1-4-4V4',
+  check: 'm5 12.5 4.5 4.5L19 7.5',
+  cube: 'M12 2.5 20.5 7v10L12 21.5 3.5 17V7zM3.5 7 12 12l8.5-5M12 12v9.5',
+  x: 'M6 6l12 12M18 6 6 18',
+  alert: 'M12 8v5M12 16.5v.01M3 12a9 9 0 1 0 18 0a9 9 0 1 0-18 0',
+  sidebarL: 'M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM9.5 4v16',
+  sidebarR: 'M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM14.5 4v16',
+};
+const Icon = (p: { d: string; class?: string }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class={p.class ?? 'size-3.5'} aria-hidden="true">
+    <path d={p.d} />
+  </svg>
+);
 const pathOf = (n: Node) => {
   const names = [];
   for (let p: Node | null = n; p; p = p.parent) names.unshift(p.name);
@@ -75,6 +101,14 @@ export default function App() {
   const [axes, setAxes] = createSignal<((typeof AXES)[number] & { x: number; y: number; z: number })[]>([]);
   const [leftOpen, setLeftOpen] = createSignal(true);
   const [rightOpen, setRightOpen] = createSignal(true);
+  const [dragging, setDragging] = createSignal(false);
+  const [copied, setCopied] = createSignal('');
+
+  const copy = (key: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(key);
+    setTimeout(() => copied() === key && setCopied(''), 1400);
+  };
 
   const toggle = (id: number) => {
     const s = new Set(expanded());
@@ -169,7 +203,7 @@ export default function App() {
     const mat = new StandardMaterial('__selection', scene);
     mat.wireframe = true;
     mat.disableLighting = true;
-    mat.emissiveColor = Color3.Yellow();
+    mat.emissiveColor = Color3.FromHexString(ACCENT);
     mat.imageProcessingConfiguration = untoned;
     selBox.material = mat;
     selBox.isPickable = false;
@@ -192,6 +226,7 @@ export default function App() {
     setProgress(0);
     setFileName(typeof src === 'string' ? src : src.name);
     const s = (scene = new Scene(engine));
+    s.clearColor = new Color4(0, 0, 0, 0); // let the CSS stage backdrop show through
     s.skipPointerMovePicking = true; // thousands of meshes: don't raycast on every mouse move
     try {
       await AppendSceneAsync(src, s, {
@@ -298,76 +333,110 @@ export default function App() {
 
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
+    setDragging(false);
     const f = e.dataTransfer?.files[0];
     if (f) load(f);
   };
+  const onFile = (e: Event & { currentTarget: HTMLInputElement }) => e.currentTarget.files?.[0] && load(e.currentTarget.files[0]);
 
+  const rowBtn = 'size-6 shrink-0 grid place-items-center rounded-md transition-colors';
   const Row = (p: { node: Node; depth: number; flat?: boolean }) => {
     const kids = () => p.node.getChildren();
     const open = () => expanded().has(p.node.uniqueId);
     const enabled = () => (tick(), p.node.isEnabled(false));
+    const sel = () => selected() === p.node;
     return (
       <>
         <div
           data-id={p.node.uniqueId}
-          class="group flex items-center gap-1 pr-2 cursor-pointer hover:bg-base-300 text-sm whitespace-nowrap"
-          classList={{ 'bg-primary/30': selected() === p.node, 'opacity-40': !enabled() }}
-          style={{ 'padding-left': `${p.depth * 12 + 4}px` }}
+          class="group relative flex items-center gap-1.5 h-7 pr-2 mx-1.5 rounded-md cursor-pointer text-[13px] whitespace-nowrap bg-(--row) transition-colors"
+          classList={{
+            '[--row:var(--color-base-300)] text-base-content': sel(),
+            '[--row:var(--color-base-100)] hover:[--row:oklch(22.5%_0.007_260)] text-base-content/80': !sel(),
+            'opacity-35': !enabled(),
+          }}
+          style={{
+            'padding-left': `${p.depth * 14 + 4}px`,
+            // indent guides, one hairline per level
+            'background-image': 'repeating-linear-gradient(to right, oklch(100% 0 0 / 0.07) 0 1px, transparent 1px 14px)',
+            'background-size': `${p.depth * 14}px 100%`,
+            'background-position': '11px 0',
+            'background-repeat': 'no-repeat',
+          }}
           onClick={() => select(p.node, true)}
         >
+          <Show when={sel()}>
+            <span class="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-primary" />
+          </Show>
           <span
-            class="w-4 text-center text-base-content/60"
+            class="size-4 shrink-0 grid place-items-center text-base-content/40 hover:text-base-content"
             onClick={(e) => {
               e.stopPropagation();
               if (!p.flat) toggle(p.node.uniqueId);
             }}
           >
-            {!p.flat && kids().length ? (open() ? '▾' : '▸') : ''}
+            <Show when={!p.flat && kids().length}>
+              <Icon d={ICON.chevron} class={`size-3 transition-transform duration-200 ${open() ? 'rotate-90' : ''}`} />
+            </Show>
           </span>
-          <span class="truncate" title={p.flat ? pathOf(p.node) : p.node.name}>
+          <span class="truncate" classList={{ 'font-medium': sel() }} title={p.flat ? pathOf(p.node) : p.node.name}>
             {p.node.name}
           </span>
           <Show when={kids().length}>
-            <span class="badge badge-xs badge-ghost">{kids().length}</span>
+            <span class="font-mono text-[10px] tabular-nums leading-4 px-1 rounded bg-base-content/6 text-base-content/45">{kids().length}</span>
           </Show>
-          <span class="text-[10px] text-base-content/40">{p.node.getClassName()}</span>
-          <button
-            class="ml-auto btn btn-ghost btn-xs px-1 opacity-0 group-hover:opacity-100"
-            title={t().focus}
-            onClick={(e) => {
-              e.stopPropagation();
-              select(p.node, true);
-            }}
+          <span class="font-mono text-[10px] text-base-content/25 truncate">{p.node.getClassName()}</span>
+          {/* overlays the row's right edge so hidden actions don't steal width from the name */}
+          <span class="absolute inset-y-0 right-0 flex items-center gap-0.5 pl-6 pr-1 rounded-r-md from-(--row) from-70% to-transparent pointer-events-none *:pointer-events-auto group-hover:bg-linear-to-l"
+            classList={{ 'bg-linear-to-l': isolated() === p.node || !enabled() }}
           >
-            🎯
-          </button>
-          <button
-            class="btn btn-xs px-1"
-            classList={{
-              'btn-warning': isolated() === p.node,
-              'btn-ghost opacity-0 group-hover:opacity-100': isolated() !== p.node,
-            }}
-            title={t().isolateTip}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (isolated() === p.node) return isolate(null);
-              select(p.node, false);
-              isolate(p.node);
-            }}
-          >
-            ◎
-          </button>
-          <button
-            class="btn btn-ghost btn-xs px-1"
-            title={t().toggleVis}
-            onClick={(e) => {
-              e.stopPropagation();
-              p.node.setEnabled(!p.node.isEnabled(false));
-              setTick(tick() + 1);
-            }}
-          >
-            {enabled() ? '👁' : '—'}
-          </button>
+            <button
+              class={`${rowBtn} text-base-content/50 hover:text-base-content hover:bg-base-content/10 opacity-0 group-hover:opacity-100 focus-visible:opacity-100`}
+              title={t().focus}
+              aria-label={t().focus}
+              onClick={(e) => {
+                e.stopPropagation();
+                select(p.node, true);
+              }}
+            >
+              <Icon d={ICON.focus} />
+            </button>
+            <button
+              class={rowBtn}
+              classList={{
+                'bg-primary text-primary-content': isolated() === p.node,
+                'text-base-content/50 hover:text-base-content hover:bg-base-content/10 opacity-0 group-hover:opacity-100 focus-visible:opacity-100': isolated() !== p.node,
+              }}
+              title={t().isolateTip}
+              aria-label={t().isolateTip}
+              aria-pressed={isolated() === p.node}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isolated() === p.node) return isolate(null);
+                select(p.node, false);
+                isolate(p.node);
+              }}
+            >
+              <Icon d={ICON.isolate} />
+            </button>
+            <button
+              class={`${rowBtn} hover:bg-base-content/10`}
+              classList={{
+                'text-base-content/50 hover:text-base-content opacity-0 group-hover:opacity-100 focus-visible:opacity-100': enabled(),
+                'text-base-content': !enabled(),
+              }}
+              title={t().toggleVis}
+              aria-label={t().toggleVis}
+              aria-pressed={!enabled()}
+              onClick={(e) => {
+                e.stopPropagation();
+                p.node.setEnabled(!p.node.isEnabled(false));
+                setTick(tick() + 1);
+              }}
+            >
+              <Icon d={enabled() ? ICON.eye : ICON.eyeOff} />
+            </button>
+          </span>
         </div>
         <Show when={!p.flat && open()}>
           <For each={kids()}>{(c) => <Row node={c} depth={p.depth + 1} />}</For>
@@ -376,75 +445,144 @@ export default function App() {
     );
   };
 
+  // floating panels over the full-bleed viewer; hidden = slid off-screen
+  const panel =
+    'absolute z-10 top-2 flex flex-col overflow-hidden rounded-box bg-base-100 border border-base-content/8 shadow-2xl shadow-black/50 transition-[translate,opacity] duration-400 ease-out-expo';
+  const toggleBtn =
+    'absolute z-20 top-2 size-9 grid place-items-center rounded-xl bg-base-100/80 backdrop-blur-md border border-base-content/8 shadow-lg shadow-black/30 text-base-content/60 hover:text-base-content transition-[left,right,color] duration-400 ease-out-expo';
+  const actBtn = 'btn btn-sm h-8 justify-start gap-2 font-normal bg-base-content/5 border-base-content/5 hover:bg-base-content/10 hover:border-base-content/10';
+
   return (
     <div
-      class="h-screen grid bg-base-100"
-      style={{ 'grid-template-columns': `${leftOpen() ? '360px' : '0'} 1fr ${rightOpen() ? '320px' : '0'}` }}
-      onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
-      <aside class="flex flex-col min-h-0 overflow-hidden" classList={{ 'border-r border-base-300': leftOpen() }} inert={!leftOpen()}>
-        <div class="p-3 space-y-2 border-b border-base-300">
-          <div class="flex items-center gap-2">
-            <h1 class="font-bold">GLB Inspector</h1>
-            <button class="btn btn-sm btn-ghost ml-auto" title="Language / 語言" onClick={toggleLang}>
-              {lang() === 'zh' ? 'EN' : '中文'}
-            </button>
-            <label class="btn btn-sm btn-primary">
-              {t().open}
-              <input type="file" accept=".glb,.gltf" class="hidden" onChange={(e) => e.currentTarget.files?.[0] && load(e.currentTarget.files[0])} />
+      class="relative h-screen overflow-hidden"
+      // x-offsets for anything that must sit beside the open panels
+      style={{ '--l': leftOpen() ? '356px' : '8px', '--r': rightOpen() ? '336px' : '8px' }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={(e) => !e.relatedTarget && setDragging(false)}
+      onDrop={onDrop}
+    >
+      <aside class={`${panel} left-2 bottom-2 w-[340px]`} classList={{ '-translate-x-[calc(100%+1rem)] opacity-0': !leftOpen() }} inert={!leftOpen()}>
+        <div class="h-full flex flex-col">
+          <div class="p-4 pb-3 space-y-4">
+            <div class="flex items-center gap-2.5">
+              <div class="size-8 grid place-items-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
+                <Icon d={ICON.cube} class="size-4.5" />
+              </div>
+              <div class="leading-tight">
+                <h1 class="text-[15px] font-semibold tracking-tight">GLB Inspector</h1>
+                <div class="text-[11px] text-base-content/45 truncate max-w-40" title={fileName() || t().dropHint}>
+                  {fileName() || t().dropHint}
+                </div>
+              </div>
+              <button class="btn btn-ghost btn-sm h-8 px-2 ml-auto font-normal text-base-content/60 hover:text-base-content" title="Language / 語言" onClick={toggleLang}>
+                {lang() === 'zh' ? 'EN' : '中文'}
+              </button>
+              <label class="btn btn-primary btn-sm h-8 gap-1.5 px-3 font-medium">
+                <Icon d={ICON.upload} />
+                {t().open}
+                <input type="file" accept=".glb,.gltf" class="hidden" onChange={onFile} />
+              </label>
+            </div>
+            <div class="flex rounded-lg bg-base-200 ring-1 ring-base-content/5 divide-x divide-base-content/6">
+              <For each={[[t().nodes, stats().nodes], ['Mesh', stats().meshes], [t().vertices, stats().vertices], [t().materials, stats().materials], [t().textures, stats().textures]] as const}>
+                {([k, v]) => (
+                  <div class="flex-auto px-2.5 py-2">
+                    <div class="text-[10px] text-base-content/45 whitespace-nowrap">{k}</div>
+                    <div class="font-mono text-[12px] tabular-nums mt-0.5">
+                      {fmt(v)}
+                    </div>
+                  </div>
+                )}
+              </For>
+            </div>
+            <label class="input input-sm h-9 w-full gap-2 bg-base-200 border-base-content/6 focus-within:border-primary/50 focus-within:outline-none">
+              <Icon d={ICON.search} class="size-4 text-base-content/40" />
+              <input type="search" class="grow" placeholder={t().search} value={query()} onInput={(e) => setQuery(e.currentTarget.value)} />
             </label>
           </div>
-          <div class="text-xs text-base-content/60 truncate" title={fileName()}>
-            {fileName()}{t().dropHint}
+          <div class="flex-1 overflow-auto pb-2 border-t border-base-content/6 pt-1.5">
+            <Show when={query().trim()} fallback={<For each={roots()}>{(n) => <Row node={n} depth={0} />}</For>}>
+              <div class="eyebrow px-4 py-1.5">{matches().length >= 300 ? t().top300 : t().results(matches().length)}</div>
+              <For each={matches()}>{(n) => <Row node={n} depth={0} flat />}</For>
+            </Show>
           </div>
-          <div class="grid grid-cols-5 gap-1 text-center text-xs">
-            <For each={[[t().nodes, stats().nodes], ['Mesh', stats().meshes], [t().vertices, stats().vertices], [t().materials, stats().materials], [t().textures, stats().textures]] as const}>
-              {([k, v]) => (
-                <div class="bg-base-200 rounded p-1">
-                  <div class="text-base-content/60">{k}</div>
-                  <div class="font-mono">{fmt(v)}</div>
-                </div>
-              )}
-            </For>
-          </div>
-          <input class="input input-sm w-full" placeholder={t().search} value={query()} onInput={(e) => setQuery(e.currentTarget.value)} />
-        </div>
-        <div class="flex-1 overflow-auto py-1">
-          <Show when={query().trim()} fallback={<For each={roots()}>{(n) => <Row node={n} depth={0} />}</For>}>
-            <div class="px-3 text-xs text-base-content/60">{matches().length >= 300 ? t().top300 : t().results(matches().length)}</div>
-            <For each={matches()}>{(n) => <Row node={n} depth={0} flat />}</For>
-          </Show>
         </div>
       </aside>
 
-      <main class="relative min-w-0">
+      <main
+        class="stage absolute inset-0 overflow-hidden after:pointer-events-none after:absolute after:inset-0 after:ring-2 after:ring-inset after:transition-colors after:duration-300"
+        classList={{ 'after:ring-primary/60': dragging(), 'after:ring-transparent': !dragging() }}
+      >
         <canvas ref={canvas} class="absolute inset-0 w-full h-full outline-none block" />
+        <Show when={!roots().length && progress() === null && !error()}>
+          <label class="rise absolute inset-0 grid place-items-center cursor-pointer">
+            <div class="text-center space-y-5">
+              <div
+                class="mx-auto size-20 grid place-items-center rounded-2xl border border-dashed text-primary transition-all duration-300"
+                classList={{ 'border-primary bg-primary/10 scale-110': dragging(), 'border-base-content/15': !dragging() }}
+              >
+                <Icon d={ICON.cube} class="size-9" />
+              </div>
+              <div>
+                <div class="text-2xl font-medium tracking-tight">{t().emptyTitle}</div>
+                <div class="text-sm text-base-content/45 mt-1.5">{t().emptySub}</div>
+              </div>
+            </div>
+            <input type="file" accept=".glb,.gltf" class="hidden" onChange={onFile} />
+          </label>
+        </Show>
         <Show when={progress() !== null}>
-          <div class="absolute inset-0 grid place-items-center bg-base-100/70">
-            <div class="w-64 text-center space-y-2">
-              <div>{t().loading} {Math.round(progress()! * 100)}%</div>
-              <progress class="progress progress-primary w-full" value={progress()!} max="1" />
+          <div class="absolute inset-0 grid place-items-center bg-base-200/50 backdrop-blur-sm">
+            <div class="rise w-72 space-y-3" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(progress()! * 100)}>
+              <div class="flex items-end justify-between">
+                <div class="eyebrow">{t().loading}</div>
+                <div class="font-mono text-4xl font-light tabular-nums leading-none">
+                  {Math.round(progress()! * 100)}
+                  <span class="text-base text-base-content/40">%</span>
+                </div>
+              </div>
+              <div class="h-0.5 rounded-full bg-base-content/10 overflow-hidden">
+                <div class="h-full bg-primary transition-[width] duration-200" style={{ width: `${progress()! * 100}%` }} />
+              </div>
+              <div class="text-xs text-base-content/40 truncate">{fileName()}</div>
             </div>
           </div>
         </Show>
         <Show when={error()}>
-          <div class="absolute top-3 left-3 right-3 alert alert-error text-sm">{error()}</div>
+          <div class="rise absolute z-20 top-14 left-[calc(var(--l)+4px)] right-[calc(var(--r)+4px)] flex gap-2.5 items-start rounded-xl border border-error/30 bg-error/10 backdrop-blur-md px-3.5 py-3 text-sm text-error">
+            <Icon d={ICON.alert} class="size-4 shrink-0 mt-0.5" />
+            <span class="break-all">{error()}</span>
+          </div>
         </Show>
         <Show when={isolated()}>
           {(n) => (
-            <button class="absolute top-3 left-3 badge badge-warning cursor-pointer" onClick={() => isolate(null)}>
-              {t().isolated}{n().name}　✕ / Esc
+            <button
+              class="rise absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-2 h-8 pl-3 pr-1.5 rounded-full bg-primary text-primary-content text-xs font-medium shadow-lg shadow-primary/20 cursor-pointer max-w-[70%]"
+              onClick={() => isolate(null)}
+            >
+              <Icon d={ICON.isolate} />
+              <span class="truncate">
+                {t().isolated}
+                {n().name}
+              </span>
+              <kbd class="font-mono text-[10px] px-1.5 h-5 grid place-items-center rounded-full bg-primary-content/10">Esc</kbd>
+              <Icon d={ICON.x} class="size-3.5 mr-1" />
             </button>
           )}
         </Show>
-        <div class="absolute bottom-2 left-3 text-xs text-base-content/50">{t().controls}</div>
-        <button class="absolute left-0 top-1/2 -translate-y-1/2 btn btn-xs btn-ghost px-1" title={t().togglePanel} onClick={() => setLeftOpen(!leftOpen())}>
-          {leftOpen() ? '◀' : '▶'}
-        </button>
-        <button class="absolute right-0 top-1/2 -translate-y-1/2 btn btn-xs btn-ghost px-1" title={t().togglePanel} onClick={() => setRightOpen(!rightOpen())}>
-          {rightOpen() ? '▶' : '◀'}
-        </button>
+        <Show when={roots().length}>
+          <div class="absolute bottom-3 left-[calc(var(--l)+4px)] flex flex-wrap gap-1 max-w-[40%] pointer-events-none transition-[left] duration-400 ease-out-expo">
+            <For each={t().controls.split(/\s*[・·]\s*/)}>
+              {(c) => <span class="px-2 h-6 grid place-items-center rounded-md bg-base-100/75 backdrop-blur-md border border-base-content/6 text-[11px] text-base-content/55">{c}</span>}
+            </For>
+          </div>
+        </Show>
         <Show when={axes().length}>
-          <svg class="absolute bottom-2 right-2 w-28 h-28 pointer-events-none" viewBox="-56 -56 112 112">
+          <svg class="absolute bottom-3 right-3 size-28 pointer-events-none" viewBox="-56 -56 112 112">
+            <circle r="55" fill="oklch(19% 0.006 260 / 0.55)" stroke="oklch(100% 0 0 / 0.06)" />
             {/* Index keeps the 6 <g> nodes across frames (For would rebuild them, dropping clicks mid-motion) */}
             <Index each={axes()}>
               {(a) => (
@@ -462,19 +600,29 @@ export default function App() {
                 >
                   <title>{(a().neg ? '-' : '+') + a().label}</title>
                   <Show when={!a().neg}>
-                    <line x1="0" y1="0" x2={a().x * 40} y2={a().y * 40} stroke={a().color} stroke-width="2.5" />
+                    <line x1="0" y1="0" x2={a().x * 38} y2={a().y * 38} stroke={a().color} stroke-width="2" stroke-linecap="round" />
                   </Show>
                   <circle
-                    cx={a().x * 40}
-                    cy={a().y * 40}
-                    r="10"
+                    cx={a().x * 38}
+                    cy={a().y * 38}
+                    r={a().neg ? 6 : 9}
                     fill={a().color}
-                    fill-opacity={a().neg ? 0.3 : 1}
+                    fill-opacity={a().neg ? 0.2 : 1}
                     stroke={a().color}
-                    stroke-width="1.5"
+                    stroke-opacity={a().neg ? 0.6 : 1}
+                    stroke-width="1.25"
                   />
                   <Show when={!a().neg}>
-                    <text x={a().x * 40} y={a().y * 40} dy="0.35em" text-anchor="middle" font-size="12" font-weight="bold" fill="#222">
+                    <text
+                      x={a().x * 38}
+                      y={a().y * 38}
+                      dy="0.35em"
+                      text-anchor="middle"
+                      font-size="10"
+                      font-weight="600"
+                      font-family="Geist Mono, ui-monospace, monospace"
+                      fill="#0d0e10"
+                    >
                       {a().label}
                     </text>
                   </Show>
@@ -485,39 +633,79 @@ export default function App() {
         </Show>
       </main>
 
-      <aside class="overflow-auto text-sm" classList={{ 'border-l border-base-300 p-3': rightOpen() }}>
-        <Show when={rightOpen() && info()} fallback={<Show when={rightOpen()}><div class="text-base-content/50">{t().pickHint}</div></Show>}>
-          {(i) => (
-            <div class="space-y-3">
-              <div>
-                <div class="font-bold break-all">{i().node.name}</div>
-                <div class="badge badge-sm badge-outline mt-1">{i().type}</div>
+      {/* panel toggles ride just outside each panel's edge, so they stay reachable when it's hidden */}
+      <button
+        class={`${toggleBtn} left-(--l)`}
+        classList={{ 'text-primary': leftOpen() }}
+        title={t().togglePanel}
+        aria-label={t().togglePanel}
+        aria-expanded={leftOpen()}
+        onClick={() => setLeftOpen(!leftOpen())}
+      >
+        <Icon d={ICON.sidebarL} class="size-4" />
+      </button>
+      <button
+        class={`${toggleBtn} right-(--r)`}
+        classList={{ 'text-primary': rightOpen() }}
+        title={t().togglePanel}
+        aria-label={t().togglePanel}
+        aria-expanded={rightOpen()}
+        onClick={() => setRightOpen(!rightOpen())}
+      >
+        <Icon d={ICON.sidebarR} class="size-4" />
+      </button>
+
+      <aside
+        class={`${panel} right-2 w-[320px] max-h-[calc(100%-9rem)]`}
+        classList={{ 'translate-x-[calc(100%+1rem)] opacity-0': !rightOpen() }}
+        inert={!rightOpen()}
+      >
+        <div class="min-h-0 overflow-auto text-sm">
+          <Show
+            when={info()}
+            fallback={
+              <div class="flex items-center gap-3 px-4 py-3.5">
+                <Icon d={ICON.focus} class="size-5 shrink-0 text-base-content/30" />
+                <div class="text-[13px] text-base-content/50 leading-snug">{t().pickHint}</div>
               </div>
-              <div class="flex gap-2">
-                <button class="btn btn-xs" onClick={() => navigator.clipboard.writeText(i().path)}>{t().copyPath}</button>
-                <Show when={i().node instanceof TransformNode && (i().node as TransformNode)}>
-                  {(tn) => (
-                    <>
-                      <button
-                        class="btn btn-xs"
-                        title={t().worldTip}
-                        onClick={() => navigator.clipboard.writeText(JSON.stringify(gltfWorld(tn())))}
-                      >
-                        {t().copyWorld}
+            }
+          >
+            {(i) => (
+              <div class="rise">
+                <div class="p-4 space-y-3 border-b border-base-content/6">
+                  <div class="flex items-center gap-2">
+                    <span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary ring-1 ring-primary/20">{i().type}</span>
+                  </div>
+                  <div class="text-base font-semibold tracking-tight leading-snug wrap-break-word">{i().node.name}</div>
+                  <div class="font-mono text-[11px] text-base-content/40 wrap-break-word leading-relaxed">{i().path}</div>
+                  <div class="grid grid-cols-2 gap-1.5 pt-1">
+                    <button class={actBtn} onClick={() => copy('path', i().path)}>
+                      <Icon d={copied() === 'path' ? ICON.check : ICON.copy} class="size-3.5 text-base-content/60" />
+                      {copied() === 'path' ? t().copied : t().copyPath}
+                    </button>
+                    <Show when={i().node instanceof TransformNode && (i().node as TransformNode)}>
+                      {(tn) => (
+                        <>
+                          <button class={actBtn} title={t().worldTip} onClick={() => copy('world', JSON.stringify(gltfWorld(tn())))}>
+                            <Icon d={copied() === 'world' ? ICON.check : ICON.matrix} class="size-3.5 text-base-content/60" />
+                            {copied() === 'world' ? t().copied : t().copyWorld}
+                          </button>
+                          <button class={actBtn} title={t().exportTip} onClick={() => exportGlb(tn())}>
+                            <Icon d={ICON.download} class="size-3.5 text-base-content/60" />
+                            {t().exportGlb}
+                          </button>
+                        </>
+                      )}
+                    </Show>
+                    <Show when={i().node.parent}>
+                      <button class={actBtn} onClick={() => select(i().node.parent, true)}>
+                        <Icon d={ICON.up} class="size-3.5 text-base-content/60" />
+                        {t().parent}
                       </button>
-                      <button class="btn btn-xs" title={t().exportTip} onClick={() => exportGlb(tn())}>
-                        {t().exportGlb}
-                      </button>
-                    </>
-                  )}
-                </Show>
-                <Show when={i().node.parent}>
-                  <button class="btn btn-xs" onClick={() => select(i().node.parent, true)}>{t().parent}</button>
-                </Show>
-              </div>
-              <div class="text-xs text-base-content/60 break-all">{i().path}</div>
-              <table class="table table-xs">
-                <tbody>
+                    </Show>
+                  </div>
+                </div>
+                <dl class="p-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 items-baseline border-b border-base-content/6">
                   <For
                     each={[
                       [t().children, fmt(i().children)],
@@ -533,31 +721,48 @@ export default function App() {
                     ].filter(([, v]) => v)}
                   >
                     {([k, v]) => (
-                      <tr>
-                        <th class="whitespace-nowrap">{k}</th>
-                        <td class="font-mono break-all">{v}</td>
-                      </tr>
+                      <>
+                        <dt class="text-[12px] text-base-content/50 whitespace-nowrap">{k}</dt>
+                        <dd class="font-mono text-[12px] tabular-nums text-right min-w-0">
+                          <Show when={v!.includes(', ')} fallback={v}>
+                            <span class="grid grid-cols-3 gap-2">
+                              <For each={v!.split(', ')}>
+                                {(c, j) => (
+                                  <span class="flex items-baseline justify-end gap-1 min-w-0">
+                                    <span class="size-1 rounded-full shrink-0 self-center" style={{ background: AXES[j() * 2].color }} />
+                                    <span class="truncate" title={c}>
+                                      {c}
+                                    </span>
+                                  </span>
+                                )}
+                              </For>
+                            </span>
+                          </Show>
+                        </dd>
+                      </>
                     )}
                   </For>
-                </tbody>
-              </table>
-              <Show when={i().materials.length}>
-                <div>
-                  <div class="font-semibold mb-1">{t().materials} ({i().materials.length})</div>
-                  <div class="flex flex-wrap gap-1">
-                    <For each={i().materials}>{(m) => <span class="badge badge-sm">{m}</span>}</For>
+                </dl>
+                <Show when={i().materials.length}>
+                  <div class="p-4 space-y-2 border-b border-base-content/6">
+                    <div class="eyebrow">
+                      {t().materials} · {i().materials.length}
+                    </div>
+                    <div class="flex flex-wrap gap-1">
+                      <For each={i().materials}>{(m) => <span class="text-[11px] px-2 py-0.5 rounded-md bg-base-content/6 text-base-content/75 wrap-break-word">{m}</span>}</For>
+                    </div>
                   </div>
-                </div>
-              </Show>
-              <Show when={i().metadata}>
-                <div>
-                  <div class="font-semibold mb-1">Metadata</div>
-                  <pre class="text-xs bg-base-200 p-2 rounded overflow-auto">{i().metadata}</pre>
-                </div>
-              </Show>
-            </div>
-          )}
-        </Show>
+                </Show>
+                <Show when={i().metadata}>
+                  <div class="p-4 space-y-2">
+                    <div class="eyebrow">Metadata</div>
+                    <pre class="font-mono text-[11px] leading-relaxed bg-base-200 ring-1 ring-base-content/5 p-3 rounded-lg overflow-auto text-base-content/75">{i().metadata}</pre>
+                  </div>
+                </Show>
+              </div>
+            )}
+          </Show>
+        </div>
       </aside>
     </div>
   );
