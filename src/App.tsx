@@ -181,7 +181,7 @@ export default function App() {
     try {
       await AppendSceneAsync(src, s, {
         pluginExtension: '.glb',
-        onProgress: (e) => e.lengthComputable && setProgress(e.loaded / e.total),
+        onProgress: (e) => s === scene && e.lengthComputable && setProgress(e.loaded / e.total),
       });
     } catch (e) {
       if (s !== scene) return;
@@ -195,7 +195,7 @@ export default function App() {
     for (const l of s.lights.slice()) l.dispose(); // model lights (KHR_lights_punctual) vary wildly; use one consistent rig
     const cam = s.activeCamera as ArcRotateCamera;
     // IBL gives PBR its ambient + reflections (metals are black without it)
-    s.environmentTexture = new HDRCubeTexture('german_town_street_1k.hdr', s, 256, false, true, false, true, null, () => setError('Failed to load german_town_street_1k.hdr'));
+    s.environmentTexture = new HDRCubeTexture('german_town_street_1k.hdr', s, 256, false, true, false, true, null, () => s === scene && setError(t().hdrError));
     // key light parented to the camera (from upper-left behind it) so the visible side always has form-revealing shading
     const key = new DirectionalLight('__key', new Vector3(0.4, -0.6, 1), s); // camera-local: right, down, forward
     key.parent = cam;
@@ -222,7 +222,7 @@ export default function App() {
       meshes: meshes.length,
       vertices: meshes.reduce((a, m) => a + m.getTotalVertices(), 0),
       materials: scene?.materials.length ?? 0,
-      textures: scene?.textures.length ?? 0,
+      textures: scene?.textures.filter((x) => x !== scene!.environmentTexture).length ?? 0, // exclude viewer's IBL
     };
   });
 

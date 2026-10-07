@@ -29,6 +29,7 @@ const zh = {
   triangles: '三角形',
   size: '尺寸 (world)',
   center: '中心 (world)',
+  hdrError: '環境光 HDR 載入失敗',
 };
 
 const en: typeof zh = {
@@ -60,6 +61,7 @@ const en: typeof zh = {
   triangles: 'Triangles',
   size: 'Size (world)',
   center: 'Center (world)',
+  hdrError: 'Failed to load environment HDR',
 };
 
 type Lang = 'en' | 'zh';
