@@ -251,7 +251,7 @@ export default function App() {
       window.removeEventListener('keydown', onKey);
       engine.dispose();
     });
-    load('sample.glb');
+    if (import.meta.env.DEV) load('sample.glb');
   });
 
   const onDrop = (e: DragEvent) => {
