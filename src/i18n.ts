@@ -63,7 +63,11 @@ const en: typeof zh = {
 };
 
 type Lang = 'en' | 'zh';
-const [lang, setLang] = createSignal((localStorage.getItem('lang') ?? (navigator.language.startsWith('zh') ? 'zh' : 'en')) as Lang);
+let saved: string | null = null;
+try {
+  saved = localStorage.getItem('lang'); // throws when storage is blocked
+} catch {}
+const [lang, setLang] = createSignal<Lang>(saved === 'zh' || saved === 'en' ? saved : navigator.language.startsWith('zh') ? 'zh' : 'en');
 const apply = (l: Lang) => {
   document.documentElement.lang = l === 'zh' ? 'zh-Hant' : 'en';
   setLang(l);
@@ -74,6 +78,8 @@ export { lang };
 export const t = () => (lang() === 'zh' ? zh : en);
 export const toggleLang = () => {
   const l = lang() === 'zh' ? 'en' : 'zh';
-  localStorage.setItem('lang', l);
   apply(l);
+  try {
+    localStorage.setItem('lang', l);
+  } catch {}
 };

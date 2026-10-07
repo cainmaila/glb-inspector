@@ -341,7 +341,7 @@ export default function App() {
         <div class="p-3 space-y-2 border-b border-base-300">
           <div class="flex items-center gap-2">
             <h1 class="font-bold">GLB Inspector</h1>
-            <button class="btn btn-sm btn-ghost ml-auto" onClick={toggleLang}>
+            <button class="btn btn-sm btn-ghost ml-auto" title="Language / 語言" onClick={toggleLang}>
               {lang() === 'zh' ? 'EN' : '中文'}
             </button>
             <label class="btn btn-sm btn-primary">
