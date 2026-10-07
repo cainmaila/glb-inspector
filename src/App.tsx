@@ -23,6 +23,7 @@ import { GLTF2Export } from '@babylonjs/serializers/glTF/2.0';
 
 SceneLoader.ShowLoadingScreen = false; // own progress overlay below
 
+const untoned = new ImageProcessingConfiguration(); // helper overlays skip the scene's tone mapping
 const fmt = (n: number) => n.toLocaleString();
 const v3 = (v: { x: number; y: number; z: number }) => `${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)}`;
 const meshesOf = (n: Node) => [...(n instanceof AbstractMesh ? [n] : []), ...n.getChildMeshes()];
@@ -103,6 +104,7 @@ export default function App() {
       ghost = new StandardMaterial('__ghost', scene);
       ghost.alpha = 0.08;
       ghost.disableDepthWrite = true;
+      ghost.imageProcessingConfiguration = untoned;
     }
     for (const m of scene.meshes) {
       if (m === selBox) continue;
@@ -154,6 +156,7 @@ export default function App() {
     mat.wireframe = true;
     mat.disableLighting = true;
     mat.emissiveColor = Color3.Yellow();
+    mat.imageProcessingConfiguration = untoned;
     selBox.material = mat;
     selBox.isPickable = false;
     selBox.renderingGroupId = 1;
@@ -181,21 +184,22 @@ export default function App() {
         onProgress: (e) => e.lengthComputable && setProgress(e.loaded / e.total),
       });
     } catch (e) {
+      if (s !== scene) return;
       setError(String(e));
       setProgress(null);
       return;
     }
+    if (s !== scene) return; // a newer load replaced (and disposed) this scene
     const r = s.rootNodes.slice();
     s.createDefaultCamera(true, true, true);
     for (const l of s.lights.slice()) l.dispose(); // model lights (KHR_lights_punctual) vary wildly; use one consistent rig
     const cam = s.activeCamera as ArcRotateCamera;
     // IBL gives PBR its ambient + reflections (metals are black without it)
-    s.environmentTexture = new HDRCubeTexture('german_town_street_1k.hdr', s, 256, false, true, false, true);
-    // key light rides with the camera (from upper-left behind it) so the visible side always has form-revealing shading
-    const key = new DirectionalLight('__key', Vector3.Down(), s);
+    s.environmentTexture = new HDRCubeTexture('german_town_street_1k.hdr', s, 256, false, true, false, true, null, () => setError('Failed to load german_town_street_1k.hdr'));
+    // key light parented to the camera (from upper-left behind it) so the visible side always has form-revealing shading
+    const key = new DirectionalLight('__key', new Vector3(0.4, -0.6, 1), s); // camera-local: right, down, forward
+    key.parent = cam;
     key.intensity = 1.5;
-    const keyDir = new Vector3(0.4, -0.6, 1).normalize(); // camera-local: right, down, forward
-    s.onBeforeRenderObservable.add(() => cam.getDirectionToRef(keyDir, key.direction));
     // PBR Neutral tone mapping keeps base colors close to authored values (what an inspector should show)
     s.imageProcessingConfiguration.toneMappingEnabled = true;
     s.imageProcessingConfiguration.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL;
