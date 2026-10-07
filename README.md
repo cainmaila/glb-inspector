@@ -7,6 +7,8 @@
 A pure front-end viewer for GLB / glTF: browse the node tree, click any part, read its size and materials, isolate a single piece, and even export a subtree as a standalone GLB.
 Got an unfamiliar 3D model and need to know what's inside, how it's split up, and where things sit in space? Open it here.
 
+**[🚀 Live demo →](https://cainmaila.github.io/glb-inspector/)**
+
 > 🔒 **Runs entirely in your browser.** Your model is never uploaded to any server.
 
 ## Why
