@@ -9,6 +9,9 @@ import { CreateBox } from '@babylonjs/core/Meshes/Builders/boxBuilder';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
 import { Matrix, Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector';
+import { DirectionalLight } from '@babylonjs/core/Lights/directionalLight';
+import { HDRCubeTexture } from '@babylonjs/core/Materials/Textures/hdrCubeTexture';
+import { ImageProcessingConfiguration } from '@babylonjs/core/Materials/imageProcessingConfiguration';
 import { PointerEventTypes } from '@babylonjs/core/Events/pointerEvents';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import type { Node } from '@babylonjs/core/node';
@@ -184,8 +187,18 @@ export default function App() {
     }
     const r = s.rootNodes.slice();
     s.createDefaultCamera(true, true, true);
-    s.createDefaultLight(true);
+    for (const l of s.lights.slice()) l.dispose(); // model lights (KHR_lights_punctual) vary wildly; use one consistent rig
     const cam = s.activeCamera as ArcRotateCamera;
+    // IBL gives PBR its ambient + reflections (metals are black without it)
+    s.environmentTexture = new HDRCubeTexture('german_town_street_1k.hdr', s, 256, false, true, false, true);
+    // key light rides with the camera (from upper-left behind it) so the visible side always has form-revealing shading
+    const key = new DirectionalLight('__key', Vector3.Down(), s);
+    key.intensity = 1.5;
+    const keyDir = new Vector3(0.4, -0.6, 1).normalize(); // camera-local: right, down, forward
+    s.onBeforeRenderObservable.add(() => cam.getDirectionToRef(keyDir, key.direction));
+    // PBR Neutral tone mapping keeps base colors close to authored values (what an inspector should show)
+    s.imageProcessingConfiguration.toneMappingEnabled = true;
+    s.imageProcessingConfiguration.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL;
     cam.wheelDeltaPercentage = 0.02;
     cam.minZ = 0.01;
     s.onPointerObservable.add((e) => {
