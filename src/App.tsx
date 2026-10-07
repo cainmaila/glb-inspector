@@ -15,6 +15,7 @@ import type { Node } from '@babylonjs/core/node';
 import '@babylonjs/core/Helpers/sceneHelpers';
 import '@babylonjs/core/Culling/ray';
 import '@babylonjs/loaders/glTF';
+import { lang, t, toggleLang } from './i18n';
 import { GLTF2Export } from '@babylonjs/serializers/glTF/2.0';
 
 SceneLoader.ShowLoadingScreen = false; // own progress overlay below
@@ -291,7 +292,7 @@ export default function App() {
           <span class="text-[10px] text-base-content/40">{p.node.getClassName()}</span>
           <button
             class="ml-auto btn btn-ghost btn-xs px-1 opacity-0 group-hover:opacity-100"
-            title="聚焦"
+            title={t().focus}
             onClick={(e) => {
               e.stopPropagation();
               select(p.node, true);
@@ -305,7 +306,7 @@ export default function App() {
               'btn-warning': isolated() === p.node,
               'btn-ghost opacity-0 group-hover:opacity-100': isolated() !== p.node,
             }}
-            title="隔離（其他部件透明，Esc 取消）"
+            title={t().isolateTip}
             onClick={(e) => {
               e.stopPropagation();
               if (isolated() === p.node) return isolate(null);
@@ -317,7 +318,7 @@ export default function App() {
           </button>
           <button
             class="btn btn-ghost btn-xs px-1"
-            title="顯示/隱藏"
+            title={t().toggleVis}
             onClick={(e) => {
               e.stopPropagation();
               p.node.setEnabled(!p.node.isEnabled(false));
@@ -340,16 +341,19 @@ export default function App() {
         <div class="p-3 space-y-2 border-b border-base-300">
           <div class="flex items-center gap-2">
             <h1 class="font-bold">GLB Inspector</h1>
-            <label class="btn btn-sm btn-primary ml-auto">
-              開啟 GLB
+            <button class="btn btn-sm btn-ghost ml-auto" title="Language / 語言" onClick={toggleLang}>
+              {lang() === 'zh' ? 'EN' : '中文'}
+            </button>
+            <label class="btn btn-sm btn-primary">
+              {t().open}
               <input type="file" accept=".glb,.gltf" class="hidden" onChange={(e) => e.currentTarget.files?.[0] && load(e.currentTarget.files[0])} />
             </label>
           </div>
           <div class="text-xs text-base-content/60 truncate" title={fileName()}>
-            {fileName()}（可拖放檔案到視窗）
+            {fileName()}{t().dropHint}
           </div>
           <div class="grid grid-cols-5 gap-1 text-center text-xs">
-            <For each={[['節點', stats().nodes], ['Mesh', stats().meshes], ['頂點', stats().vertices], ['材質', stats().materials], ['貼圖', stats().textures]] as const}>
+            <For each={[[t().nodes, stats().nodes], ['Mesh', stats().meshes], [t().vertices, stats().vertices], [t().materials, stats().materials], [t().textures, stats().textures]] as const}>
               {([k, v]) => (
                 <div class="bg-base-200 rounded p-1">
                   <div class="text-base-content/60">{k}</div>
@@ -358,11 +362,11 @@ export default function App() {
               )}
             </For>
           </div>
-          <input class="input input-sm w-full" placeholder="搜尋節點名稱…" value={query()} onInput={(e) => setQuery(e.currentTarget.value)} />
+          <input class="input input-sm w-full" placeholder={t().search} value={query()} onInput={(e) => setQuery(e.currentTarget.value)} />
         </div>
         <div class="flex-1 overflow-auto py-1">
           <Show when={query().trim()} fallback={<For each={roots()}>{(n) => <Row node={n} depth={0} />}</For>}>
-            <div class="px-3 text-xs text-base-content/60">{matches().length >= 300 ? '前 300 筆' : `${matches().length} 筆`}</div>
+            <div class="px-3 text-xs text-base-content/60">{matches().length >= 300 ? t().top300 : t().results(matches().length)}</div>
             <For each={matches()}>{(n) => <Row node={n} depth={0} flat />}</For>
           </Show>
         </div>
@@ -373,7 +377,7 @@ export default function App() {
         <Show when={progress() !== null}>
           <div class="absolute inset-0 grid place-items-center bg-base-100/70">
             <div class="w-64 text-center space-y-2">
-              <div>載入中 {Math.round(progress()! * 100)}%</div>
+              <div>{t().loading} {Math.round(progress()! * 100)}%</div>
               <progress class="progress progress-primary w-full" value={progress()!} max="1" />
             </div>
           </div>
@@ -384,15 +388,15 @@ export default function App() {
         <Show when={isolated()}>
           {(n) => (
             <button class="absolute top-3 left-3 badge badge-warning cursor-pointer" onClick={() => isolate(null)}>
-              隔離：{n().name}　✕ / Esc
+              {t().isolated}{n().name}　✕ / Esc
             </button>
           )}
         </Show>
-        <div class="absolute bottom-2 left-3 text-xs text-base-content/50">左鍵旋轉・右鍵平移・滾輪縮放・點擊選取</div>
+        <div class="absolute bottom-2 left-3 text-xs text-base-content/50">{t().controls}</div>
       </main>
 
       <aside class="overflow-auto border-l border-base-300 p-3 text-sm">
-        <Show when={info()} fallback={<div class="text-base-content/50">點選樹狀節點或模型部件查看資訊</div>}>
+        <Show when={info()} fallback={<div class="text-base-content/50">{t().pickHint}</div>}>
           {(i) => (
             <div class="space-y-3">
               <div>
@@ -400,25 +404,25 @@ export default function App() {
                 <div class="badge badge-sm badge-outline mt-1">{i().type}</div>
               </div>
               <div class="flex gap-2">
-                <button class="btn btn-xs" onClick={() => navigator.clipboard.writeText(i().path)}>複製路徑</button>
+                <button class="btn btn-xs" onClick={() => navigator.clipboard.writeText(i().path)}>{t().copyPath}</button>
                 <Show when={i().node instanceof TransformNode && (i().node as TransformNode)}>
-                  {(t) => (
+                  {(tn) => (
                     <>
                       <button
                         class="btn btn-xs"
-                        title="glTF 座標，16 數 column-major，可直接套在 root"
-                        onClick={() => navigator.clipboard.writeText(JSON.stringify(gltfWorld(t())))}
+                        title={t().worldTip}
+                        onClick={() => navigator.clipboard.writeText(JSON.stringify(gltfWorld(tn())))}
                       >
-                        複製世界矩陣
+                        {t().copyWorld}
                       </button>
-                      <button class="btn btn-xs" title="此節點含子層，位移歸零" onClick={() => exportGlb(t())}>
-                        匯出 GLB
+                      <button class="btn btn-xs" title={t().exportTip} onClick={() => exportGlb(tn())}>
+                        {t().exportGlb}
                       </button>
                     </>
                   )}
                 </Show>
                 <Show when={i().node.parent}>
-                  <button class="btn btn-xs" onClick={() => select(i().node.parent, true)}>上層</button>
+                  <button class="btn btn-xs" onClick={() => select(i().node.parent, true)}>{t().parent}</button>
                 </Show>
               </div>
               <div class="text-xs text-base-content/60 break-all">{i().path}</div>
@@ -426,16 +430,16 @@ export default function App() {
                 <tbody>
                   <For
                     each={[
-                      ['子節點', fmt(i().children)],
-                      ['所有後代', fmt(i().descendants)],
-                      ['Mesh 數', fmt(i().meshes)],
-                      ['頂點', fmt(i().vertices)],
-                      ['三角形', fmt(i().triangles)],
+                      [t().children, fmt(i().children)],
+                      [t().descendants, fmt(i().descendants)],
+                      [t().meshCount, fmt(i().meshes)],
+                      [t().vertices, fmt(i().vertices)],
+                      [t().triangles, fmt(i().triangles)],
                       ['Position', i().position],
                       ['Rotation°', i().rotation],
                       ['Scaling', i().scaling],
-                      ['尺寸 (world)', i().size],
-                      ['中心 (world)', i().center],
+                      [t().size, i().size],
+                      [t().center, i().center],
                     ].filter(([, v]) => v)}
                   >
                     {([k, v]) => (
@@ -449,7 +453,7 @@ export default function App() {
               </table>
               <Show when={i().materials.length}>
                 <div>
-                  <div class="font-semibold mb-1">材質 ({i().materials.length})</div>
+                  <div class="font-semibold mb-1">{t().materials} ({i().materials.length})</div>
                   <div class="flex flex-wrap gap-1">
                     <For each={i().materials}>{(m) => <span class="badge badge-sm">{m}</span>}</For>
                   </div>
