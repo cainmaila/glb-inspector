@@ -36,6 +36,17 @@ const gltfWorld = (n: TransformNode) =>
   Array.from(n.computeWorldMatrix(true).multiply(Matrix.Invert((rootOf(n) as TransformNode).getWorldMatrix())).asArray(), (x) =>
     +x.toFixed(6),
   );
+// view gizmo axes in glTF space; __root__ flips handedness so glTF +X is Babylon -X
+const AXES = (
+  [
+    ['X', '#e5484d', new Vector3(-1, 0, 0)],
+    ['Y', '#8cc63f', new Vector3(0, 1, 0)],
+    ['Z', '#3b82f6', new Vector3(0, 0, 1)],
+  ] as const
+).flatMap(([label, color, d]) => [
+  { label, color, d, neg: false },
+  { label, color, d: d.negate(), neg: true },
+]);
 const pathOf = (n: Node) => {
   const names = [];
   for (let p: Node | null = n; p; p = p.parent) names.unshift(p.name);
@@ -61,6 +72,9 @@ export default function App() {
   const [error, setError] = createSignal('');
   const [fileName, setFileName] = createSignal('');
   const [isolated, setIsolated] = createSignal<Node | null>(null);
+  const [axes, setAxes] = createSignal<((typeof AXES)[number] & { x: number; y: number; z: number })[]>([]);
+  const [leftOpen, setLeftOpen] = createSignal(true);
+  const [rightOpen, setRightOpen] = createSignal(true);
 
   const toggle = (id: number) => {
     const s = new Set(expanded());
@@ -205,6 +219,15 @@ export default function App() {
     s.imageProcessingConfiguration.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL;
     cam.wheelDeltaPercentage = 0.02;
     cam.minZ = 0.01;
+    cam.alpha = Math.PI / 2; // look from glTF +Z toward -Z, like three.js default view
+    cam.onViewMatrixChangedObservable.add(() => {
+      const view = cam.getViewMatrix();
+      const v = AXES.map((a) => {
+        const { x, y, z } = Vector3.TransformNormal(a.d, view);
+        return { ...a, x, y: -y, z }; // svg y points down
+      });
+      setAxes(v.sort((a, b) => b.z - a.z)); // far first
+    });
     s.onPointerObservable.add((e) => {
       if (e.type === PointerEventTypes.POINTERDOWN || e.type === PointerEventTypes.POINTERWHEEL) stopFly(); // user takes over camera
       if (e.type === PointerEventTypes.POINTERTAP) select(s.pick(s.pointerX, s.pointerY).pickedMesh, false);
@@ -260,12 +283,12 @@ export default function App() {
   onMount(() => {
     engine = new Engine(canvas, true);
     engine.runRenderLoop(() => scene?.activeCamera && scene.render());
-    const resize = () => engine.resize();
+    const ro = new ResizeObserver(() => engine.resize()); // window resize + panel collapse
+    ro.observe(canvas);
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && isolated() && isolate(null);
-    window.addEventListener('resize', resize);
     window.addEventListener('keydown', onKey);
     onCleanup(() => {
-      window.removeEventListener('resize', resize);
+      ro.disconnect();
       window.removeEventListener('keydown', onKey);
       engine.dispose();
     });
@@ -353,8 +376,11 @@ export default function App() {
   };
 
   return (
-    <div class="h-screen grid grid-cols-[360px_1fr_320px] bg-base-100" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
-      <aside class="flex flex-col min-h-0 border-r border-base-300">
+    <div
+      class="h-screen grid bg-base-100"
+      style={{ 'grid-template-columns': `${leftOpen() ? '360px' : '0'} 1fr ${rightOpen() ? '320px' : '0'}` }}
+      onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
+      <aside class="flex flex-col min-h-0 overflow-hidden" classList={{ 'border-r border-base-300': leftOpen() }}>
         <div class="p-3 space-y-2 border-b border-base-300">
           <div class="flex items-center gap-2">
             <h1 class="font-bold">GLB Inspector</h1>
@@ -390,7 +416,7 @@ export default function App() {
       </aside>
 
       <main class="relative min-w-0">
-        <canvas ref={canvas} class="w-full h-full outline-none block" />
+        <canvas ref={canvas} class="absolute inset-0 w-full h-full outline-none block" />
         <Show when={progress() !== null}>
           <div class="absolute inset-0 grid place-items-center bg-base-100/70">
             <div class="w-64 text-center space-y-2">
@@ -410,9 +436,49 @@ export default function App() {
           )}
         </Show>
         <div class="absolute bottom-2 left-3 text-xs text-base-content/50">{t().controls}</div>
+        <button class="absolute left-0 top-1/2 -translate-y-1/2 btn btn-xs btn-ghost px-1" title={t().togglePanel} onClick={() => setLeftOpen(!leftOpen())}>
+          {leftOpen() ? '◀' : '▶'}
+        </button>
+        <button class="absolute right-0 top-1/2 -translate-y-1/2 btn btn-xs btn-ghost px-1" title={t().togglePanel} onClick={() => setRightOpen(!rightOpen())}>
+          {rightOpen() ? '▶' : '◀'}
+        </button>
+        <Show when={axes().length}>
+          <svg class="absolute bottom-2 right-2 w-28 h-28" viewBox="-56 -56 112 112">
+            <For each={axes()}>
+              {(a) => (
+                <g
+                  class="cursor-pointer"
+                  onClick={() => {
+                    const cam = scene!.activeCamera as ArcRotateCamera;
+                    [cam.alpha, cam.beta] = [Math.atan2(a.d.z, a.d.x), Math.acos(a.d.y)]; // look from this axis
+                  }}
+                >
+                  <title>{(a.neg ? '-' : '+') + a.label}</title>
+                  <Show when={!a.neg}>
+                    <line x1="0" y1="0" x2={a.x * 40} y2={a.y * 40} stroke={a.color} stroke-width="2.5" />
+                  </Show>
+                  <circle
+                    cx={a.x * 40}
+                    cy={a.y * 40}
+                    r="10"
+                    fill={a.color}
+                    fill-opacity={a.neg ? 0.3 : 1}
+                    stroke={a.color}
+                    stroke-width="1.5"
+                  />
+                  <Show when={!a.neg}>
+                    <text x={a.x * 40} y={a.y * 40} dy="0.35em" text-anchor="middle" font-size="12" font-weight="bold" fill="#222">
+                      {a.label}
+                    </text>
+                  </Show>
+                </g>
+              )}
+            </For>
+          </svg>
+        </Show>
       </main>
 
-      <aside class="overflow-auto border-l border-base-300 p-3 text-sm">
+      <aside class="overflow-auto text-sm" classList={{ 'border-l border-base-300 p-3': rightOpen() }}>
         <Show when={info()} fallback={<div class="text-base-content/50">{t().pickHint}</div>}>
           {(i) => (
             <div class="space-y-3">

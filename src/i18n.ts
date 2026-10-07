@@ -30,6 +30,7 @@ const zh = {
   size: '尺寸 (world)',
   center: '中心 (world)',
   hdrError: '環境光 HDR 載入失敗',
+  togglePanel: '收合/展開面板',
 };
 
 const en: typeof zh = {
@@ -62,6 +63,7 @@ const en: typeof zh = {
   size: 'Size (world)',
   center: 'Center (world)',
   hdrError: 'Failed to load environment HDR',
+  togglePanel: 'Collapse/expand panel',
 };
 
 type Lang = 'en' | 'zh';
