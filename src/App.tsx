@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
+import { createMemo, createSignal, For, Index, onCleanup, onMount, Show } from 'solid-js';
 import { Engine } from '@babylonjs/core/Engines/engine';
 import { Scene } from '@babylonjs/core/scene';
 import { AppendSceneAsync, SceneLoader } from '@babylonjs/core/Loading/sceneLoader';
@@ -188,6 +188,7 @@ export default function App() {
     setSelected(null);
     setExpanded(new Set<number>());
     setError('');
+    setAxes([]);
     setProgress(0);
     setFileName(typeof src === 'string' ? src : src.name);
     const s = (scene = new Scene(engine));
@@ -380,7 +381,7 @@ export default function App() {
       class="h-screen grid bg-base-100"
       style={{ 'grid-template-columns': `${leftOpen() ? '360px' : '0'} 1fr ${rightOpen() ? '320px' : '0'}` }}
       onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
-      <aside class="flex flex-col min-h-0 overflow-hidden" classList={{ 'border-r border-base-300': leftOpen() }}>
+      <aside class="flex flex-col min-h-0 overflow-hidden" classList={{ 'border-r border-base-300': leftOpen() }} inert={!leftOpen()}>
         <div class="p-3 space-y-2 border-b border-base-300">
           <div class="flex items-center gap-2">
             <h1 class="font-bold">GLB Inspector</h1>
@@ -443,43 +444,49 @@ export default function App() {
           {rightOpen() ? '▶' : '◀'}
         </button>
         <Show when={axes().length}>
-          <svg class="absolute bottom-2 right-2 w-28 h-28" viewBox="-56 -56 112 112">
-            <For each={axes()}>
+          <svg class="absolute bottom-2 right-2 w-28 h-28 pointer-events-none" viewBox="-56 -56 112 112">
+            {/* Index keeps the 6 <g> nodes across frames (For would rebuild them, dropping clicks mid-motion) */}
+            <Index each={axes()}>
               {(a) => (
                 <g
-                  class="cursor-pointer"
+                  class="cursor-pointer pointer-events-auto"
                   onClick={() => {
-                    const cam = scene!.activeCamera as ArcRotateCamera;
-                    [cam.alpha, cam.beta] = [Math.atan2(a.d.z, a.d.x), Math.acos(a.d.y)]; // look from this axis
+                    const cam = scene?.activeCamera as ArcRotateCamera | null;
+                    if (!cam) return;
+                    const d = a().d;
+                    stopFly();
+                    cam.inertialAlphaOffset = cam.inertialBetaOffset = 0;
+                    if (d.y === 0) cam.alpha = Math.atan2(d.z, d.x); // ±Y keeps current heading
+                    cam.beta = Math.acos(d.y); // look from this axis
                   }}
                 >
-                  <title>{(a.neg ? '-' : '+') + a.label}</title>
-                  <Show when={!a.neg}>
-                    <line x1="0" y1="0" x2={a.x * 40} y2={a.y * 40} stroke={a.color} stroke-width="2.5" />
+                  <title>{(a().neg ? '-' : '+') + a().label}</title>
+                  <Show when={!a().neg}>
+                    <line x1="0" y1="0" x2={a().x * 40} y2={a().y * 40} stroke={a().color} stroke-width="2.5" />
                   </Show>
                   <circle
-                    cx={a.x * 40}
-                    cy={a.y * 40}
+                    cx={a().x * 40}
+                    cy={a().y * 40}
                     r="10"
-                    fill={a.color}
-                    fill-opacity={a.neg ? 0.3 : 1}
-                    stroke={a.color}
+                    fill={a().color}
+                    fill-opacity={a().neg ? 0.3 : 1}
+                    stroke={a().color}
                     stroke-width="1.5"
                   />
-                  <Show when={!a.neg}>
-                    <text x={a.x * 40} y={a.y * 40} dy="0.35em" text-anchor="middle" font-size="12" font-weight="bold" fill="#222">
-                      {a.label}
+                  <Show when={!a().neg}>
+                    <text x={a().x * 40} y={a().y * 40} dy="0.35em" text-anchor="middle" font-size="12" font-weight="bold" fill="#222">
+                      {a().label}
                     </text>
                   </Show>
                 </g>
               )}
-            </For>
+            </Index>
           </svg>
         </Show>
       </main>
 
       <aside class="overflow-auto text-sm" classList={{ 'border-l border-base-300 p-3': rightOpen() }}>
-        <Show when={info()} fallback={<div class="text-base-content/50">{t().pickHint}</div>}>
+        <Show when={rightOpen() && info()} fallback={<Show when={rightOpen()}><div class="text-base-content/50">{t().pickHint}</div></Show>}>
           {(i) => (
             <div class="space-y-3">
               <div>
